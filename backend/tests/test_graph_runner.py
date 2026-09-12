@@ -6,10 +6,7 @@ import json
 
 import pytest
 
-from app.core.models import (
-    ResearchPlan,
-    ResearchSubtask,
-)
+from app.core.models import Evidence, ResearchPlan, ResearchSubtask
 from app.graph.nodes.web_researcher import make_web_researcher_node
 from app.graph.state import DeepVerifyGraphState
 from app.graph.workflow import build_research_graph
@@ -109,7 +106,8 @@ async def test_state_preserved_through_workflow() -> None:
     assert state.draft is None
     assert state.claims == []
     assert state.claim_checks == []
-    assert state.evidence == []
+    assert len(state.evidence) == 3
+    assert all(evidence.confidence == 0.5 for evidence in state.evidence)
 
 
 @pytest.mark.asyncio
@@ -303,3 +301,124 @@ async def test_web_researcher_handles_missing_plan() -> None:
     )
 
     assert completed_event.payload["results_count"] == 0
+
+@pytest.mark.asyncio
+async def test_web_researcher_returns_evidence_from_search_results() -> None:
+    search = _RecordingSearchProvider()
+    node = make_web_researcher_node(search)
+    state = _make_test_state()
+
+    result = await node(state)
+
+    evidence = result["evidence"]
+
+    assert len(evidence) == 3
+
+    for item in evidence:
+        assert item.excerpt
+        assert item.confidence == 0.5
+        assert len(item.sources) == 1
+        assert item.sources[0].provider == "recording"
+        assert item.sources[0].url.startswith("https://example.com/")
+
+
+@pytest.mark.asyncio
+async def test_web_researcher_prefers_content_over_snippet() -> None:
+    search = _RecordingSearchProvider()
+    node = make_web_researcher_node(search)
+    state = _make_test_state()
+
+    result = await node(state)
+
+    evidence = result["evidence"]
+
+    assert evidence[0].excerpt == "Content for consensus query"
+
+
+@pytest.mark.asyncio
+async def test_web_researcher_falls_back_to_snippet() -> None:
+    class _SnippetOnlySearchProvider:
+        async def search(
+            self,
+            query: str,
+            *,
+            max_results: int = 5,
+        ) -> SearchResponse:
+            return SearchResponse(
+                query=query,
+                results=[
+                    SearchResult(
+                        title="Snippet Result",
+                        url="https://example.com/snippet",
+                        snippet="Snippet-only evidence",
+                        content="",
+                        provider="snippet-only",
+                    )
+                ],
+            )
+
+    search = _SnippetOnlySearchProvider()
+    node = make_web_researcher_node(search)
+    state = _make_test_state()
+
+    result = await node(state)
+
+    evidence = result["evidence"]
+
+    assert len(evidence) == 3
+    assert all(
+        item.excerpt == "Snippet-only evidence"
+        for item in evidence
+    )
+
+
+@pytest.mark.asyncio
+async def test_web_researcher_excludes_results_without_text() -> None:
+    class _EmptyResultSearchProvider:
+        async def search(
+            self,
+            query: str,
+            *,
+            max_results: int = 5,
+        ) -> SearchResponse:
+            return SearchResponse(
+                query=query,
+                results=[
+                    SearchResult(
+                        title="Empty Result",
+                        url="https://example.com/empty",
+                        snippet="",
+                        content="",
+                        provider="empty",
+                    )
+                ],
+            )
+
+    search = _EmptyResultSearchProvider()
+    node = make_web_researcher_node(search)
+    state = _make_test_state()
+
+    result = await node(state)
+
+    assert result["evidence"] == []
+
+    completed_event = next(
+        event
+        for event in result["agent_events"]
+        if event.type == "search_completed"
+    )
+
+    assert completed_event.payload["results_count"] == 3
+    assert completed_event.payload["evidence_count"] == 0
+
+
+@pytest.mark.asyncio
+async def test_graph_runner_populates_evidence() -> None:
+    state = await run_research("Solar panel efficiency trends")
+
+    assert len(state.evidence) == 3
+
+    for evidence in state.evidence:
+        assert evidence.excerpt
+        assert evidence.confidence == 0.5
+        assert len(evidence.sources) == 1
