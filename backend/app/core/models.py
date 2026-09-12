@@ -16,6 +16,7 @@ AgentEventType = Literal[
     "subtask_completed",
     "search_started",
     "search_completed",
+    "claims_extracted",
     "claim_checked",
     "error",
     "run_completed",
@@ -96,6 +97,8 @@ class ClaimCheck(BaseModel):
     claim: str
     verdict: ClaimVerdict
     evidence: list[Evidence] = Field(default_factory=list)
+    grounding_score: float = Field(default=0.0, ge=0.0, le=1.0)
+    explanation: str = ""
 
     @field_validator("claim")
     @classmethod
