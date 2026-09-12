@@ -6,10 +6,12 @@ from app.providers.search.base import (
     SearchResult,
 )
 from app.providers.search.mock import MockSearchProvider
+from app.providers.search.tavily import TavilySearchProvider
 
 __all__ = [
     "SearchProvider",
     "SearchResponse",
     "SearchResult",
     "MockSearchProvider",
+    "TavilySearchProvider",
 ]

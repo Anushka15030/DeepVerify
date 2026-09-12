@@ -24,28 +24,46 @@ class Settings(BaseSettings):
 
     app_env: str = Field(default="development", alias="APP_ENV")
     log_level: str = Field(default="INFO", alias="LOG_LEVEL")
+
     mock_mode: bool = Field(default=True, alias="MOCK_MODE")
 
     llm_provider: str = Field(default="mock", alias="LLM_PROVIDER")
     llm_model: str = Field(default="mock-gpt", alias="LLM_MODEL")
+
     kie_api_key: str = Field(default="", alias="KIE_API_KEY")
     kie_base_url: str = Field(
         default="https://api.kie.example/v1",
         alias="KIE_BASE_URL",
     )
 
-    search_provider: str = Field(default="mock", alias="SEARCH_PROVIDER")
+    search_provider: str = Field(
+        default="mock",
+        alias="SEARCH_PROVIDER",
+    )
+    tavily_api_key: str = Field(
+        default="",
+        alias="TAVILY_API_KEY",
+    )
+
     document_retrieval_provider: str = Field(
         default="mock",
         alias="DOCUMENT_RETRIEVAL_PROVIDER",
     )
 
-    max_research_iterations: int = Field(default=3, alias="MAX_RESEARCH_ITERATIONS")
+    max_research_iterations: int = Field(
+        default=3,
+        alias="MAX_RESEARCH_ITERATIONS",
+    )
+
     grounding_pass_threshold: float = Field(
         default=0.7,
         alias="GROUNDING_PASS_THRESHOLD",
     )
-    storage_dir: str = Field(default="./storage", alias="STORAGE_DIR")
+
+    storage_dir: str = Field(
+        default="./storage",
+        alias="STORAGE_DIR",
+    )
 
 
 @lru_cache
@@ -56,11 +74,15 @@ def get_settings() -> Settings:
 
 def clear_settings_cache() -> None:
     """Clear the settings cache (primarily for tests)."""
+
     get_settings.cache_clear()
 
 
-def create_llm_provider(settings: Settings | None = None) -> LLMProvider:
+def create_llm_provider(
+    settings: Settings | None = None,
+) -> LLMProvider:
     """Create an LLM provider based on settings and mock mode."""
+
     from app.providers.llm.kie_astra import KieAstraLLMProvider
     from app.providers.llm.mock import MockLLMProvider
 
@@ -70,17 +92,25 @@ def create_llm_provider(settings: Settings | None = None) -> LLMProvider:
         return MockLLMProvider(model=cfg.llm_model)
 
     provider_name = cfg.llm_provider.lower()
+
     if provider_name == "mock":
         return MockLLMProvider(model=cfg.llm_model)
+
     if provider_name == "kie_astra":
         return KieAstraLLMProvider(settings=cfg)
 
-    raise ValueError(f"Unsupported LLM provider: {cfg.llm_provider}")
+    raise ValueError(
+        f"Unsupported LLM provider: {cfg.llm_provider}"
+    )
 
 
-def create_search_provider(settings: Settings | None = None) -> SearchProvider:
+def create_search_provider(
+    settings: Settings | None = None,
+) -> SearchProvider:
     """Create a search provider based on settings and mock mode."""
+
     from app.providers.search.mock import MockSearchProvider
+    from app.providers.search.tavily import TavilySearchProvider
 
     cfg = settings or get_settings()
 
@@ -88,7 +118,20 @@ def create_search_provider(settings: Settings | None = None) -> SearchProvider:
         return MockSearchProvider()
 
     provider_name = cfg.search_provider.lower()
+
     if provider_name == "mock":
         return MockSearchProvider()
 
-    raise ValueError(f"Unsupported search provider: {cfg.search_provider}")
+    if provider_name == "tavily":
+        if not cfg.tavily_api_key.strip():
+            raise ValueError(
+                "TAVILY_API_KEY must be set when using the Tavily search provider"
+            )
+
+        return TavilySearchProvider(
+            api_key=cfg.tavily_api_key,
+        )
+
+    raise ValueError(
+        f"Unsupported search provider: {cfg.search_provider}"
+    )
