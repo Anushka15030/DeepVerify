@@ -1,37 +1,46 @@
-"""Deterministic mock search provider."""
+"""Deterministic mock search provider for tests and local development."""
 
 from __future__ import annotations
 
-import hashlib
+from datetime import datetime, timezone
 
-from app.providers.search.base import SearchResult
+from app.providers.search.base import SearchProvider, SearchResponse, SearchResult
 
 
 class MockSearchProvider:
-    """Returns deterministic search results based on query hash."""
+    """Deterministic search provider used for testing."""
 
-    provider_name: str = "mock"
+    provider_name = "mock"
 
-    @staticmethod
-    def _query_digest(query: str) -> str:
-        return hashlib.sha256(query.encode("utf-8")).hexdigest()
-
-    async def search(self, query: str, max_results: int = 5) -> list[SearchResult]:
-        if max_results < 1:
-            return []
-
-        digest = self._query_digest(query)
-        count = min(max_results, 10)
-
-        results: list[SearchResult] = []
-        for index in range(count):
-            segment = digest[index * 2 : index * 2 + 8]
-            results.append(
-                SearchResult(
-                    title=f"Mock result {index + 1}: {query[:40]}",
-                    url=f"https://mock.example/{digest[:8]}/{index}",
-                    snippet=f"Deterministic snippet [{segment}] for query.",
-                    score=round(1.0 - (index * 0.1), 2),
-                )
+    def __init__(self, results: list[SearchResult] | None = None) -> None:
+        self._results = results or [
+            SearchResult(
+                title="DeepVerify Mock Source",
+                url="https://example.com/deepverify",
+                snippet="A deterministic mock search result.",
+                content=(
+                    "This is mock content used to test the DeepVerify "
+                    "search-provider contract."
+                ),
+                provider=self.provider_name,
+                retrieved_at=datetime.now(timezone.utc),
             )
-        return results
+        ]
+
+    async def search(
+        self,
+        query: str,
+        *,
+        max_results: int = 5,
+    ) -> SearchResponse:
+        """Return deterministic results without making a network request."""
+
+        if not query.strip():
+            return SearchResponse(query=query, results=[])
+
+        limited_results = self._results[:max_results]
+
+        return SearchResponse(
+            query=query,
+            results=limited_results,
+        )
