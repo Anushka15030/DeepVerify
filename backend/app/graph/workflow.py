@@ -20,6 +20,7 @@ from app.graph.nodes.revision_decider import revision_decider_node
 from app.graph.nodes.revision_researcher import (
     make_revision_researcher_node,
 )
+from app.graph.nodes.writer import make_writer_node
 from app.graph.nodes.web_researcher import make_web_researcher_node
 from app.graph.state import DeepVerifyGraphState
 from app.providers.document.base import DocumentRetrievalProvider
@@ -55,6 +56,10 @@ def build_research_graph(
     )
 
     builder = StateGraph(DeepVerifyGraphState)
+
+    # ---------------------------------------------------------
+    # Nodes
+    # ---------------------------------------------------------
 
     builder.add_node(
         "planner",
@@ -93,6 +98,16 @@ def build_research_graph(
         make_revision_researcher_node(search_provider),
     )
 
+    # NEW: final research dossier writer
+    builder.add_node(
+        "writer",
+        make_writer_node(llm),
+    )
+
+    # ---------------------------------------------------------
+    # Main workflow
+    # ---------------------------------------------------------
+
     builder.add_edge(START, "planner")
 
     # Fan-out: both research nodes run in parallel after planning.
@@ -113,18 +128,33 @@ def build_research_graph(
         "revision_decider",
     )
 
+    # ---------------------------------------------------------
+    # Revision routing
+    # ---------------------------------------------------------
+
     builder.add_conditional_edges(
         "revision_decider",
         route_revision,
         {
             "revise": "revision_researcher",
-            "finish": END,
+
+            # CHANGED:
+            # Previously this went directly to END.
+            # Now the verified claims go to the writer first.
+            "finish": "writer",
         },
     )
 
+    # Revision research goes back through fact checking.
     builder.add_edge(
         "revision_researcher",
         "fact_checker",
+    )
+
+    # NEW: writer is the final step before END.
+    builder.add_edge(
+        "writer",
+        END,
     )
 
     return builder.compile()

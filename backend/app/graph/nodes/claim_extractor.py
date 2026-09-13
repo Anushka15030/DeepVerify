@@ -22,9 +22,15 @@ def make_claim_extractor_node(llm: LLMProvider):
 
         run_id = state.run_id
 
-        research_text = "\n".join(
-            evidence.excerpt
-            for evidence in state.evidence
+        # Keep the claim-extraction context deliberately small.
+        # Sending the entire evidence set to the LLM is expensive and
+        # produces too many low-value claims.
+        MAX_EVIDENCE_ITEMS = 8
+        MAX_EXCERPT_CHARS = 1200
+
+        research_text = "\n\n".join(
+            evidence.excerpt.strip()[:MAX_EXCERPT_CHARS]
+            for evidence in state.evidence[:MAX_EVIDENCE_ITEMS]
             if evidence.excerpt.strip()
         )
 
@@ -53,7 +59,8 @@ def make_claim_extractor_node(llm: LLMProvider):
                 research_text
             )
 
-            claims = [item.claim for item in extracted_claims]
+            MAX_CLAIMS = 10
+            claims = [item.claim for item in extracted_claims[:MAX_CLAIMS]]
 
         except Exception:
             mode = "deterministic_fallback"

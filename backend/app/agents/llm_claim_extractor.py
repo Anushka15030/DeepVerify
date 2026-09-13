@@ -9,24 +9,38 @@ from app.providers.llm.base import LLMProvider
 
 
 class LLMClaimExtractor:
-    """Extract structured factual claims using an LLM."""
+    """Extract a small set of high-value factual claims using an LLM."""
+
+    MAX_CLAIMS = 10
 
     def __init__(self, llm: LLMProvider) -> None:
         self.llm = llm
 
-    async def extract(
-        self,
-        text: str,
-    ) -> list[ExtractedClaim]:
-        """Extract structured claims from research text."""
-
+    async def extract(self, text: str) -> list[ExtractedClaim]:
         if not text.strip():
             return []
 
         system = """
 You are a research claim extraction agent.
 
-Extract only factual claims from the provided research text.
+Extract only the most important factual claims from the provided research text.
+
+Prioritize:
+- quantitative or statistical claims
+- concrete factual claims
+- important comparisons
+- supported causal claims
+- important temporal claims
+
+Ignore:
+- opinions
+- recommendations
+- questions
+- vague statements
+- repeated claims
+- minor background details
+
+Extract AT MOST 10 claims.
 
 For each claim, classify it as exactly one of:
 - quantitative
@@ -51,7 +65,6 @@ Each item must have exactly:
 }
 
 Do not explain your answer.
-Do not include questions.
 Do not invent information.
 """
 
@@ -69,14 +82,10 @@ Extract the important factual claims from this research text:
         try:
             data = json.loads(response)
         except json.JSONDecodeError as exc:
-            raise ValueError(
-                "LLM claim extractor returned invalid JSON."
-            ) from exc
+            raise ValueError("LLM returned invalid JSON for claim extraction.") from exc
 
         if not isinstance(data, list):
-            raise ValueError(
-                "LLM claim extractor must return a JSON array."
-            )
+            raise ValueError("LLM claim extraction response must be a JSON array.")
 
         claims: list[ExtractedClaim] = []
 
@@ -84,8 +93,14 @@ Extract the important factual claims from this research text:
             if not isinstance(item, dict):
                 continue
 
-            claims.append(
-                ExtractedClaim.model_validate(item)
-            )
+            try:
+                claim = ExtractedClaim.model_validate(item)
+            except Exception:
+                continue
+
+            claims.append(claim)
+
+            if len(claims) >= self.MAX_CLAIMS:
+                break
 
         return claims

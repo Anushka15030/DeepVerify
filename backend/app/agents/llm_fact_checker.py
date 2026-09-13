@@ -19,6 +19,8 @@ class LLMFactChecker:
         claim: str,
         evidence: list[Evidence],
     ) -> ClaimCheck:
+        """Verify one claim using only the supplied evidence."""
+
         if not claim.strip():
             raise ValueError("claim must not be blank")
 
@@ -31,55 +33,57 @@ class LLMFactChecker:
                 explanation="No evidence was available to verify this claim.",
             )
 
-        evidence_text = "\n\n".join(
-            f"[Evidence {index}]\n{item.excerpt}"
+        evidence_text = "\n".join(
+            f"[{index}] {item.excerpt.strip()}"
             for index, item in enumerate(evidence)
+            if item.excerpt.strip()
         )
 
+        if not evidence_text:
+            return ClaimCheck(
+                claim=claim,
+                verdict="unverifiable",
+                evidence=[],
+                grounding_score=0.0,
+                explanation="Available evidence contained no usable excerpts.",
+            )
+
         system = """
-You are the fact-checking agent in a research verification system.
+You are a strict fact-checking agent.
 
-Your task is to verify ONE claim using ONLY the supplied evidence.
+Verify ONE claim using ONLY the supplied evidence.
 
-Classify the claim as exactly one of:
-- supported
-- contradicted
-- unverifiable
-- inconclusive
+Verdict must be exactly one of:
+supported, contradicted, unverifiable, inconclusive
 
-Definitions:
-- supported: the evidence directly supports the claim.
-- contradicted: the evidence directly conflicts with the claim.
-- unverifiable: the evidence does not contain enough information to determine whether the claim is true.
-- inconclusive: the evidence is relevant but ambiguous, incomplete, or conflicting.
+Use:
+- supported = evidence directly supports the claim
+- contradicted = evidence directly conflicts with the claim
+- unverifiable = evidence is insufficient
+- inconclusive = evidence is relevant but ambiguous or conflicting
 
-Assign a grounding_score from 0.0 to 1.0:
-- 0.0 = completely unsupported
-- 0.5 = partially grounded or inconclusive
-- 1.0 = strongly grounded
-
-Return ONLY valid JSON.
-
-The JSON must contain exactly:
+Return ONLY this JSON object:
 {
-  "verdict": "...",
+  "verdict": "supported",
   "grounding_score": 0.0,
-  "explanation": "...",
+  "explanation": "brief evidence-based explanation",
   "evidence_indices": [0]
 }
 
-evidence_indices must contain the zero-based indices of evidence items
-that materially support your decision.
+grounding_score must be between 0.0 and 1.0.
 
-Do not invent evidence.
+evidence_indices must contain only the zero-based evidence indices
+that materially support the verdict.
+
 Do not use outside knowledge.
+Do not invent information.
 Do not include markdown.
-Do not include any text outside the JSON object.
+Do not include text outside the JSON object.
+Keep the explanation under 40 words.
 """
 
-        prompt = f"""
-Claim:
-{claim}
+        prompt = f"""Claim:
+{claim.strip()}
 
 Evidence:
 {evidence_text}
@@ -106,6 +110,31 @@ Evidence:
         grounding_score = data.get("grounding_score")
         explanation = data.get("explanation", "")
         evidence_indices = data.get("evidence_indices", [])
+
+        allowed_verdicts = {
+            "supported",
+            "contradicted",
+            "unverifiable",
+            "inconclusive",
+        }
+
+        if verdict not in allowed_verdicts:
+            raise ValueError(
+                f"Invalid fact-check verdict: {verdict!r}"
+            )
+
+        if not isinstance(grounding_score, (int, float)):
+            raise ValueError(
+                "grounding_score must be numeric."
+            )
+
+        grounding_score = max(
+            0.0,
+            min(1.0, float(grounding_score)),
+        )
+
+        if not isinstance(explanation, str):
+            explanation = str(explanation)
 
         if not isinstance(evidence_indices, list):
             raise ValueError(

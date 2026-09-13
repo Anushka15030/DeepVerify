@@ -102,7 +102,8 @@ async def test_state_preserved_through_workflow() -> None:
     assert state.original_question == question
     assert state.revision_count <= 2
     assert state.grounding_score == 0.5
-    assert state.draft is None
+    assert state.draft is not None
+    assert len(state.draft) > 0
     assert len(state.claims) >= 3
     assert len(state.claim_checks) >= 3
     assert len(state.evidence) >= 3

@@ -13,7 +13,51 @@ from app.graph.state import DeepVerifyGraphState
 from app.providers.llm.base import LLMProvider
 
 
+# Cost-control limits.
+MAX_CLAIMS_PER_PASS = 6
+MAX_EVIDENCE_PER_CLAIM = 4
+MAX_EXCERPT_CHARS = 1000
+
+
+def _select_evidence_for_claim(claim: str, evidence: list) -> list:
+    """Select a small evidence subset that is most relevant to a claim."""
+
+    claim_tokens = {
+        token.lower()
+        for token in claim.split()
+        if len(token) >= 4
+    }
+
+    scored: list[tuple[int, Any]] = []
+
+    for item in evidence:
+        excerpt = item.excerpt.strip()
+
+        if not excerpt:
+            continue
+
+        excerpt_tokens = {
+            token.lower()
+            for token in excerpt.split()
+            if len(token) >= 4
+        }
+
+        overlap = len(claim_tokens & excerpt_tokens)
+
+        scored.append((overlap, item))
+
+    scored.sort(key=lambda pair: pair[0], reverse=True)
+
+    selected = [
+        item
+        for _, item in scored[:MAX_EVIDENCE_PER_CLAIM]
+    ]
+
+    return selected
+
+
 def make_fact_checker_node(llm: LLMProvider):
+
     async def fact_checker_node(
         state: DeepVerifyGraphState,
     ) -> dict[str, Any]:
@@ -42,13 +86,6 @@ def make_fact_checker_node(llm: LLMProvider):
 
         # ---------------------------------------------------------
         # Decide which claims need to be checked.
-        #
-        # First pass:
-        #     Check every claim.
-        #
-        # Revision pass:
-        #     Check only claims whose latest grounding score
-        #     is below the configured threshold.
         # ---------------------------------------------------------
 
         if state.revision_count == 0:
@@ -69,9 +106,12 @@ def make_fact_checker_node(llm: LLMProvider):
                 )
             ]
 
+        # Hard limit to prevent unexpectedly expensive LLM runs.
+        claims_to_check = claims_to_check[:MAX_CLAIMS_PER_PASS]
+
         # ---------------------------------------------------------
         # If there are no weak claims left, keep the existing
-        # grounding score and do not create duplicate checks.
+        # grounding score.
         # ---------------------------------------------------------
 
         if not claims_to_check:
@@ -109,7 +149,7 @@ def make_fact_checker_node(llm: LLMProvider):
             }
 
         # ---------------------------------------------------------
-        # Fact-check the selected claims.
+        # Fact-check selected claims using only relevant evidence.
         # ---------------------------------------------------------
 
         mode = "llm"
@@ -119,10 +159,30 @@ def make_fact_checker_node(llm: LLMProvider):
             checker = LLMFactChecker(llm)
 
             for claim in claims_to_check:
-                result = await checker.check_claim(
+                relevant_evidence = _select_evidence_for_claim(
                     claim,
                     state.evidence,
                 )
+
+                # Trim excerpts before sending them to the LLM.
+                compact_evidence = []
+
+                for evidence in relevant_evidence:
+                    evidence_copy = evidence.model_copy(
+                        update={
+                            "excerpt": evidence.excerpt.strip()[
+                                :MAX_EXCERPT_CHARS
+                            ]
+                        }
+                    )
+
+                    compact_evidence.append(evidence_copy)
+
+                result = await checker.check_claim(
+                    claim,
+                    compact_evidence,
+                )
+
                 claim_checks.append(result)
 
         except Exception:
@@ -130,19 +190,23 @@ def make_fact_checker_node(llm: LLMProvider):
 
             fallback_checker = FactChecker()
 
-            claim_checks = [
-                fallback_checker.check_claim(
+            claim_checks = []
+
+            for claim in claims_to_check:
+                relevant_evidence = _select_evidence_for_claim(
                     claim,
                     state.evidence,
                 )
-                for claim in claims_to_check
-            ]
+
+                claim_checks.append(
+                    fallback_checker.check_claim(
+                        claim,
+                        relevant_evidence,
+                    )
+                )
 
         # ---------------------------------------------------------
-        # Merge the new checks with previous checks.
-        #
-        # The state stores claim_checks as an append-only list,
-        # so we build a "latest result per claim" view here.
+        # Merge new checks with previous checks.
         # ---------------------------------------------------------
 
         latest_checks = {
@@ -154,8 +218,7 @@ def make_fact_checker_node(llm: LLMProvider):
             latest_checks[check.claim] = check
 
         # ---------------------------------------------------------
-        # Calculate the overall grounding score using the latest
-        # result for every claim.
+        # Calculate overall grounding score.
         # ---------------------------------------------------------
 
         grounding_score = (
