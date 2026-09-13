@@ -6,3 +6,16 @@ __pycache__/
 .pytest_cache/
 storage/
 .mypy_cache/
+# MinerU local environment
+mineru-env/
+
+# MinerU runtime files
+mineru_service/uploads/
+mineru_service/outputs/
+mineru_service/__pycache__/
+
+# Local PDF used for testing
+*.pdf
+
+# MinerU test output
+mineru_test/
