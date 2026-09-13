@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from app.providers.search.base import SearchProvider, SearchResponse, SearchResult
+from app.providers.search.base import SearchResponse, SearchResult
 
 
 class MockSearchProvider:

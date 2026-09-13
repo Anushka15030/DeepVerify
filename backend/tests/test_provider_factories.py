@@ -4,7 +4,11 @@ from __future__ import annotations
 
 import pytest
 
-from app.core.config import clear_settings_cache, create_llm_provider, create_search_provider
+from app.core.config import (
+    clear_settings_cache,
+    create_llm_provider,
+    create_search_provider,
+)
 from app.providers.llm.kie_astra import KieAstraLLMProvider
 from app.providers.llm.mock import MockLLMProvider
 from app.providers.search.base import SearchProvider

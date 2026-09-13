@@ -1,7 +1,9 @@
 """Tests for the Tavily search provider."""
 
 from __future__ import annotations
+
 import json
+
 import httpx
 import pytest
 

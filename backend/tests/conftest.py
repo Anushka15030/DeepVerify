@@ -2,13 +2,11 @@
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 import pytest
 
 from app.core.config import clear_settings_cache
-
 
 _DEFAULT_ENV = {
     "APP_ENV": "development",
