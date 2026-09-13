@@ -1,6 +1,29 @@
-.env
+# Python
 __pycache__/
-*.pyc
+*.py[cod]
+*.egg-info/
+*.egg
+.eggs/
+build/
+dist/
+wheels/
+.venv/
+venv/
+env/
+
+# Testing
 .pytest_cache/
-storage/
 .mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+coverage.xml
+
+# Tooling
+.idea/
+.vscode/
+*.swp
+
+# DeepVerify local artifacts
+storage/
+.env

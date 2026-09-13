@@ -6,7 +6,7 @@ import json
 
 import pytest
 
-from app.core.models import Evidence, ResearchPlan, ResearchSubtask
+from app.core.models import ResearchPlan, ResearchSubtask
 from app.graph.nodes.web_researcher import make_web_researcher_node
 from app.graph.state import DeepVerifyGraphState
 from app.graph.workflow import build_research_graph
