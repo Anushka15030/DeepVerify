@@ -20,6 +20,7 @@ class Settings(BaseSettings):
         env_file=".env",
         env_file_encoding="utf-8",
         extra="ignore",
+
     )
 
     app_env: str = Field(default="development", alias="APP_ENV")
@@ -51,14 +52,14 @@ class Settings(BaseSettings):
         alias="DOCUMENT_RETRIEVAL_PROVIDER",
     )
 
-    max_research_iterations: int = Field(
-        default=3,
-        alias="MAX_RESEARCH_ITERATIONS",
+    grounding_pass_threshold: float = Field(
+        default=0.80,
+        alias="GROUNDING_PASS_THRESHOLD",
     )
 
-    grounding_pass_threshold: float = Field(
-        default=0.7,
-        alias="GROUNDING_PASS_THRESHOLD",
+    max_research_iterations: int = Field(
+        default=2,
+        alias="MAX_RESEARCH_ITERATIONS",
     )
 
     storage_dir: str = Field(

@@ -29,8 +29,8 @@ def test_settings_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
     assert settings.search_provider == "mock"
     assert settings.tavily_api_key == ""
     assert settings.document_retrieval_provider == "mock"
-    assert settings.max_research_iterations == 3
-    assert settings.grounding_pass_threshold == 0.7
+    assert settings.max_research_iterations == 2
+    assert settings.grounding_pass_threshold == 0.80
     assert settings.storage_dir == "./storage"
 
 
@@ -159,3 +159,9 @@ def test_create_search_provider_tavily_is_case_insensitive(
     provider = create_search_provider()
 
     assert isinstance(provider, TavilySearchProvider)
+
+def test_revision_settings_defaults() -> None:
+    settings = Settings()
+
+    assert settings.grounding_pass_threshold == 0.80
+    assert settings.max_research_iterations == 2

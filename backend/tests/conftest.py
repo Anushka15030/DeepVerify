@@ -20,8 +20,8 @@ _DEFAULT_ENV = {
     "KIE_BASE_URL": "https://api.kie.example/v1",
     "SEARCH_PROVIDER": "mock",
     "DOCUMENT_RETRIEVAL_PROVIDER": "mock",
-    "MAX_RESEARCH_ITERATIONS": "3",
-    "GROUNDING_PASS_THRESHOLD": "0.7",
+    "MAX_RESEARCH_ITERATIONS": "2",
+    "GROUNDING_PASS_THRESHOLD": "0.80",
     "STORAGE_DIR": "./storage",
 }
 
