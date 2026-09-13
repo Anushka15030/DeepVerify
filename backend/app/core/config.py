@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from app.providers.document.base import DocumentRetrievalProvider
 
 if TYPE_CHECKING:
     from app.providers.llm.base import LLMProvider
@@ -136,4 +137,25 @@ def create_search_provider(
 
     raise ValueError(
         f"Unsupported search provider: {cfg.search_provider}"
+    )
+
+
+def create_document_retrieval_provider(
+    settings: Settings | None = None,
+) -> DocumentRetrievalProvider:
+    from app.providers.document.mock import MockDocumentRetrievalProvider
+
+    cfg = settings or get_settings()
+
+    provider_name = cfg.document_retrieval_provider.lower()
+
+    if cfg.mock_mode:
+        return MockDocumentRetrievalProvider()
+
+    if provider_name == "mock":
+        return MockDocumentRetrievalProvider()
+
+    raise ValueError(
+        f"Unsupported document retrieval provider: "
+        f"{cfg.document_retrieval_provider}"
     )

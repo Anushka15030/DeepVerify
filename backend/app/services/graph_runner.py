@@ -6,6 +6,7 @@ import uuid
 from datetime import datetime, timezone
 
 from app.core.config import (
+    create_document_retrieval_provider,
     create_llm_provider,
     create_search_provider,
     get_settings,
@@ -13,6 +14,7 @@ from app.core.config import (
 from app.core.models import AgentEvent
 from app.graph.state import DeepVerifyState, initial_graph_state
 from app.graph.workflow import build_research_graph
+from app.providers.document.base import DocumentRetrievalProvider
 from app.providers.llm.base import LLMProvider
 from app.providers.search.base import SearchProvider
 
@@ -23,6 +25,7 @@ async def run_research(
     run_id: str | None = None,
     llm: LLMProvider | None = None,
     search: SearchProvider | None = None,
+    document_provider: DocumentRetrievalProvider | None = None,
 ) -> DeepVerifyState:
     """Execute the research graph and return the final state."""
 
@@ -32,10 +35,15 @@ async def run_research(
 
     llm_provider = llm or create_llm_provider(settings)
     search_provider = search or create_search_provider(settings)
+    document_retrieval_provider = (
+        document_provider
+        or create_document_retrieval_provider(settings)
+    )
 
     graph = build_research_graph(
         llm=llm_provider,
         search=search_provider,
+        document_provider=document_retrieval_provider,
     )
 
     initial = initial_graph_state(

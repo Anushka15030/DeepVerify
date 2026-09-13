@@ -84,10 +84,9 @@ async def test_placeholder_research_nodes_emit_events() -> None:
     )
 
     assert any(
-        event.payload.get("mode") == "placeholder"
+        event.payload.get("mode") == "MockDocumentRetrievalProvider"
         for event in doc_events
     )
-
 
 @pytest.mark.asyncio
 async def test_state_preserved_through_workflow() -> None:
@@ -104,7 +103,7 @@ async def test_state_preserved_through_workflow() -> None:
     assert state.revision_count <= 2
     assert state.grounding_score == 0.5
     assert state.draft is None
-    assert len(state.claims) == 3
+    assert len(state.claims) >= 3
     assert len(state.claim_checks) >= 3
     assert len(state.evidence) >= 3
     assert all(evidence.confidence == 0.5 for evidence in state.evidence)

@@ -1,54 +1,99 @@
-"""Placeholder document research graph node (Phase 2 mock)."""
+"""Document research graph node."""
 
 from __future__ import annotations
 
 from datetime import datetime, timezone
 from typing import Any
 
-from app.core.models import AgentEvent
+from app.core.models import AgentEvent, Evidence, SourceMetadata
 from app.graph.state import DeepVerifyGraphState
+from app.providers.document.base import DocumentRetrievalProvider
 
 
-async def document_researcher_node(
-    state: DeepVerifyGraphState,
-) -> dict[str, Any]:
-    """Emit a placeholder event; real PDF retrieval is Phase 3+."""
+def make_document_researcher_node(
+    document_provider: DocumentRetrievalProvider,
+):
+    async def document_researcher_node(
+        state: DeepVerifyGraphState,
+    ) -> dict[str, Any]:
 
-    run_id = state.run_id
-    plan = state.research_plan
+        run_id = state.run_id
+        plan = state.research_plan
 
-    subtask_ids = (
-        [subtask.id for subtask in plan.subtasks]
-        if plan
-        else []
-    )
+        started = AgentEvent(
+            type="search_started",
+            run_id=run_id,
+            payload={
+                "agent": "document_researcher",
+                "mode": type(document_provider).__name__,
+            },
+            timestamp=datetime.now(timezone.utc),
+        )
 
-    started = AgentEvent(
-        type="search_started",
-        run_id=run_id,
-        payload={
-            "agent": "document_researcher",
-            "mode": "placeholder",
-            "message": (
-                "Document research placeholder — "
-                "PDF retrieval deferred to Phase 3+"
-            ),
-            "subtask_ids": subtask_ids,
-        },
-        timestamp=datetime.now(timezone.utc),
-    )
+        if not plan:
+            completed = AgentEvent(
+                type="search_completed",
+                run_id=run_id,
+                payload={
+                    "agent": "document_researcher",
+                    "results_count": 0,
+                },
+                timestamp=datetime.now(timezone.utc),
+            )
 
-    completed = AgentEvent(
-        type="search_completed",
-        run_id=run_id,
-        payload={
-            "agent": "document_researcher",
-            "mode": "placeholder",
-            "results_count": 0,
-        },
-        timestamp=datetime.now(timezone.utc),
-    )
+            return {
+                "agent_events": [started, completed],
+            }
 
-    return {
-        "agent_events": [started, completed],
-    }
+        evidence: list[Evidence] = []
+        total_results = 0
+
+        for subtask in plan.subtasks:
+            response = await document_provider.search(
+                subtask.query,
+                max_results=5,
+            )
+
+            total_results += len(response.results)
+
+            for result in response.results:
+                if not result.excerpt.strip():
+                    continue
+
+                source = SourceMetadata(
+                    url=(
+                        f"document://{result.document_id}"
+                        f"/page/{result.page_number}"
+                    ),
+                    title=result.document_name,
+                    snippet=result.excerpt,
+                    provider=result.provider,
+                    retrieved_at=result.retrieved_at,
+                )
+
+                evidence.append(
+                    Evidence(
+                        excerpt=result.excerpt,
+                        sources=[source],
+                        confidence=0.5,
+                    )
+                )
+
+        completed = AgentEvent(
+            type="search_completed",
+            run_id=run_id,
+            payload={
+                "agent": "document_researcher",
+                "mode": type(document_provider).__name__,
+                "results_count": total_results,
+                "evidence_count": len(evidence),
+            },
+            timestamp=datetime.now(timezone.utc),
+        )
+
+        return {
+            "evidence": evidence,
+            "agent_events": [started, completed],
+        }
+
+    return document_researcher_node
