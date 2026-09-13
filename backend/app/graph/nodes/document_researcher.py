@@ -69,6 +69,10 @@ def make_document_researcher_node(
                     snippet=result.excerpt,
                     provider=result.provider,
                     retrieved_at=result.retrieved_at,
+                    document_id=result.document_id,
+                    page_number=result.page_number,
+                    bbox=result.bbox,
+                    image_url=result.image_url,
                 )
 
                 evidence.append(

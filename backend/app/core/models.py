@@ -72,6 +72,12 @@ class SourceMetadata(BaseModel):
     retrieved_at: datetime
     provider: str
 
+    # Document-specific metadata for visual citation inspection.
+    document_id: str | None = None
+    page_number: int | None = None
+    bbox: list[float] | None = None
+    image_url: str | None = None
+
     @field_validator("url", "title", "provider")
     @classmethod
     def must_not_be_blank(cls, value: str) -> str:
