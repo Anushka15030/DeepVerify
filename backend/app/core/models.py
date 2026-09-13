@@ -107,7 +107,27 @@ class ClaimCheck(BaseModel):
             raise ValueError("claim must not be blank")
         return value
 
+class ExtractedClaim(BaseModel):
+    """A factual claim extracted from research evidence."""
 
+    claim: str
+    claim_type: Literal[
+        "quantitative",
+        "factual",
+        "comparative",
+        "causal",
+        "temporal",
+        "general",
+    ]
+    importance: Literal["high", "medium", "low"]
+
+    @field_validator("claim")
+    @classmethod
+    def claim_must_not_be_blank(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("claim must not be blank")
+        return value
+        
 class AgentEvent(BaseModel):
     """SSE-ready event envelope for agent activity streaming."""
 

@@ -11,6 +11,7 @@ from app.core.models import (
     AgentEvent,
     ClaimCheck,
     Evidence,
+    ExtractedClaim,
     ResearchPlan,
     ResearchSubtask,
     SourceMetadata,
@@ -75,3 +76,23 @@ def test_agent_event_defaults_timestamp() -> None:
 def test_agent_event_requires_run_id() -> None:
     with pytest.raises(ValidationError):
         AgentEvent(type="error", payload={}, run_id="  ")
+
+def test_extracted_claim_valid():
+    claim = ExtractedClaim(
+        claim="India installed 12 GW of solar capacity.",
+        claim_type="quantitative",
+        importance="high",
+    )
+
+    assert claim.claim == "India installed 12 GW of solar capacity."
+    assert claim.claim_type == "quantitative"
+    assert claim.importance == "high"
+
+
+def test_extracted_claim_rejects_blank_claim():
+    with pytest.raises(ValueError):
+        ExtractedClaim(
+            claim="   ",
+            claim_type="factual",
+            importance="medium",
+        )

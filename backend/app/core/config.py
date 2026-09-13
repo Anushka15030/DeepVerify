@@ -31,9 +31,10 @@ class Settings(BaseSettings):
     llm_model: str = Field(default="mock-gpt", alias="LLM_MODEL")
 
     kie_api_key: str = Field(default="", alias="KIE_API_KEY")
+  
     kie_base_url: str = Field(
-        default="https://api.kie.example/v1",
-        alias="KIE_BASE_URL",
+    default="https://api.kie.ai",
+    alias="KIE_BASE_URL",
     )
 
     search_provider: str = Field(
