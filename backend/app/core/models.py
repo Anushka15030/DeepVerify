@@ -18,6 +18,10 @@ AgentEventType = Literal[
     "search_completed",
     "claims_extracted",
     "claim_checked",
+    "revision_requested",
+    "revision_not_needed",
+    "revision_search_started",
+    "revision_search_completed",
     "error",
     "run_completed",
 ]
@@ -127,7 +131,7 @@ class ExtractedClaim(BaseModel):
         if not value.strip():
             raise ValueError("claim must not be blank")
         return value
-        
+
 class AgentEvent(BaseModel):
     """SSE-ready event envelope for agent activity streaming."""
 

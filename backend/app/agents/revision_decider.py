@@ -18,8 +18,6 @@ class RevisionDecider:
         grounding_score: float | None,
         revision_count: int,
     ) -> bool:
-        """Return True when another research iteration is justified."""
-
         if grounding_score is None:
             return True
 
@@ -32,16 +30,28 @@ class RevisionDecider:
         self,
         claim_checks: list[ClaimCheck],
     ) -> list[str]:
-        """Build targeted research queries for weak claims."""
+        """Build one targeted query per unique weak claim using the latest check."""
 
-        queries: list[str] = []
+        # Keep only the latest check for each claim.
+        latest_checks: dict[str, ClaimCheck] = {}
 
         for check in claim_checks:
+            claim = check.claim.strip()
+
+            if not claim:
+                continue
+
+            latest_checks[claim] = check
+
+        # Create targeted searches only for weak claims.
+        queries: list[str] = []
+
+        for claim, check in latest_checks.items():
             if check.grounding_score >= self.threshold:
                 continue
 
             queries.append(
-                f"Verify this claim with reliable sources: {check.claim}"
+                f"Verify this claim with reliable sources: {claim}"
             )
 
         return queries
