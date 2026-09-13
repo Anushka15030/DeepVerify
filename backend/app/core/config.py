@@ -4,10 +4,14 @@ from __future__ import annotations
 
 from functools import lru_cache
 from typing import TYPE_CHECKING
+from pathlib import Path
+
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from app.providers.document.base import DocumentRetrievalProvider
+
+
 
 if TYPE_CHECKING:
     from app.providers.llm.base import LLMProvider
@@ -143,10 +147,11 @@ def create_search_provider(
 def create_document_retrieval_provider(
     settings: Settings | None = None,
 ) -> DocumentRetrievalProvider:
+    """Create a document retrieval provider based on settings and mock mode."""
     from app.providers.document.mock import MockDocumentRetrievalProvider
+    from app.providers.document.mineru import MinerUDocumentRetrievalProvider
 
     cfg = settings or get_settings()
-
     provider_name = cfg.document_retrieval_provider.lower()
 
     if cfg.mock_mode:
@@ -154,6 +159,10 @@ def create_document_retrieval_provider(
 
     if provider_name == "mock":
         return MockDocumentRetrievalProvider()
+
+    if provider_name == "mineru":
+        output_dir = Path("../mineru_service/outputs").resolve()
+        return MinerUDocumentRetrievalProvider(output_dir)
 
     raise ValueError(
         f"Unsupported document retrieval provider: "
