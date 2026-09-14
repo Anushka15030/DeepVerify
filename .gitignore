@@ -18,4 +18,4 @@ mineru_service/__pycache__/
 *.pdf
 
 # MinerU test output
-mineru_test/
+mineru_test/.DS_Store
