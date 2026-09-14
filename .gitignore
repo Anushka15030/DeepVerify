@@ -19,3 +19,6 @@ mineru_service/__pycache__/
 
 # MinerU test output
 mineru_test/.DS_Store
+
+# macOS system files
+.DS_Store
