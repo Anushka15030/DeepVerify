@@ -4,6 +4,7 @@ import type {
   ResearchResult,
 } from "@/types/research";
 import { formatNumber, formatPercent } from "@/lib/formatters";
+import { useState } from "react";
 import ResearchPlan from "./ResearchPlan";
 import ClaimsSection from "./ClaimsSection";
 import EvidenceSection from "./EvidenceSection";
@@ -137,101 +138,149 @@ function ClaimVerification({
 }: ClaimVerificationProps) {
   return (
     <div className="mt-4 rounded-xl border border-slate-800 bg-slate-900/60 p-4">
-      <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
-        Claim Verification
-      </p>
+      <div>
+        <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
+          Claim Verification
+        </p>
+
+        <p className="mt-1 text-xs text-slate-600">
+          {claimChecks.length} verification checks
+        </p>
+      </div>
 
       {claimChecks.length > 0 ? (
         <div className="mt-3 space-y-3">
           {claimChecks.map((check, index) => (
-            <div
+            <ClaimCheckCard
               key={`${index}-${check.claim}`}
-              className="rounded-lg bg-slate-950 px-3 py-3"
-            >
-              <div className="flex flex-wrap items-start justify-between gap-2">
-                <div className="min-w-0">
-                  <p className="text-xs text-slate-600">
-                    Claim #{index + 1}
-                  </p>
-
-                  <p className="mt-1 text-sm text-slate-300">
-                    {check.claim}
-                  </p>
-                </div>
-
-                <span className="whitespace-nowrap rounded-full border border-slate-700 px-2 py-0.5 text-xs capitalize text-slate-300">
-                  {check.verdict}
-                </span>
-              </div>
-
-              <div className="mt-3 flex items-center gap-2">
-                <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-slate-800">
-                  <div
-                    className="h-full rounded-full bg-purple-400"
-                    style={{
-                      width: `${Math.min(
-                        Math.max(
-                          check.grounding_score * 100,
-                          0,
-                        ),
-                        100,
-                      )}%`,
-                    }}
-                  />
-                </div>
-
-                <span className="text-xs font-semibold text-purple-400">
-                  {formatPercent(check.grounding_score)}
-                </span>
-              </div>
-
-              {check.explanation && (
-                <p className="mt-2 text-xs leading-5 text-slate-500">
-                  {check.explanation}
-                </p>
-              )}
-
-              {/* Only show evidence belonging to THIS claim */}
-              {check.evidence?.length > 0 && (
-                <div className="mt-3 border-t border-slate-800 pt-3">
-                  <p className="text-xs font-medium text-slate-500">
-                    Supporting evidence
-                  </p>
-
-                  <div className="mt-2 space-y-2">
-                    {check.evidence.map(
-                      (evidence: Evidence, evidenceIndex) => {
-                        const source =
-                          evidence.sources?.[0];
-
-                        return (
-                          <div
-                            key={evidenceIndex}
-                            className="rounded-md border border-slate-800 bg-slate-900 px-3 py-2"
-                          >
-                            {source?.title && (
-                              <p className="text-xs font-medium text-slate-400">
-                                {source.title}
-                              </p>
-                            )}
-
-                            <p className="mt-1 text-xs leading-5 text-slate-500">
-                              {evidence.excerpt}
-                            </p>
-                          </div>
-                        );
-                      },
-                    )}
-                  </div>
-                </div>
-              )}
-            </div>
+              check={check}
+              index={index}
+            />
           ))}
         </div>
       ) : (
         <p className="mt-3 text-sm text-slate-500">
           No claim verification details were returned for this run.
         </p>
+      )}
+    </div>
+  );
+}
+
+type ClaimCheckCardProps = {
+  check: ClaimCheck;
+  index: number;
+};
+
+function ClaimCheckCard({
+  check,
+  index,
+}: ClaimCheckCardProps) {
+  const [showEvidence, setShowEvidence] = useState(false);
+
+  const supportingEvidence = check.evidence ?? [];
+  const visibleEvidence = supportingEvidence.slice(0, 2);
+
+  return (
+    <div className="min-w-0 rounded-lg bg-slate-950 px-3 py-3">
+      <div className="flex min-w-0 flex-wrap items-start justify-between gap-2">
+        <div className="min-w-0 flex-1">
+          <p className="text-xs text-slate-600">
+            Claim #{index + 1}
+          </p>
+
+          <p className="mt-1 break-words text-sm leading-5 text-slate-300">
+            {check.claim}
+          </p>
+        </div>
+
+        <span className="shrink-0 whitespace-nowrap rounded-full border border-slate-700 px-2 py-0.5 text-xs capitalize text-slate-300">
+          {check.verdict}
+        </span>
+      </div>
+
+      <div className="mt-3 flex items-center gap-2">
+        <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-slate-800">
+          <div
+            className="h-full rounded-full bg-purple-400"
+            style={{
+              width: `${Math.min(
+                Math.max(check.grounding_score * 100, 0),
+                100,
+              )}%`,
+            }}
+          />
+        </div>
+
+        <span className="shrink-0 text-xs font-semibold text-purple-400">
+          {formatPercent(check.grounding_score)}
+        </span>
+      </div>
+
+      {check.explanation && (
+        <p className="mt-2 break-words text-xs leading-5 text-slate-500">
+          {check.explanation}
+        </p>
+      )}
+
+      {supportingEvidence.length > 0 && (
+        <div className="mt-3 border-t border-slate-800 pt-3">
+          <button
+            type="button"
+            onClick={() =>
+              setShowEvidence((current) => !current)
+            }
+            className="flex w-full items-center justify-between text-left text-xs font-medium text-slate-500 hover:text-slate-300"
+          >
+            <span>
+              Supporting evidence ({supportingEvidence.length})
+            </span>
+
+            <span>
+              {showEvidence ? "Hide" : "Show"}
+            </span>
+          </button>
+
+          {showEvidence && (
+            <div className="mt-2 space-y-2">
+              {visibleEvidence.map(
+                (evidence: Evidence, evidenceIndex) => {
+                  const source = evidence.sources?.[0];
+
+                  return (
+                    <div
+                      key={evidenceIndex}
+                      className="min-w-0 rounded-md border border-slate-800 bg-slate-900 px-3 py-2"
+                    >
+                      {source?.title && (
+                        <p className="break-words text-xs font-medium text-slate-400">
+                          {source.title}
+                        </p>
+                      )}
+
+                      {source?.page_number != null && (
+                        <p className="mt-1 text-xs text-slate-600">
+                          Page {source.page_number}
+                        </p>
+                      )}
+
+                      <p className="mt-1 break-words text-xs leading-5 text-slate-500">
+                        {evidence.excerpt}
+                      </p>
+                    </div>
+                  );
+                },
+              )}
+
+              {supportingEvidence.length > 2 && (
+                <p className="text-xs text-slate-600">
+                  Showing 2 of {supportingEvidence.length} supporting
+                  evidence items.
+                </p>
+              )}
+            </div>
+          )}
+        </div>
       )}
     </div>
   );
