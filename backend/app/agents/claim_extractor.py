@@ -37,4 +37,7 @@ class ClaimExtractor:
 
             claims.append(sentence)
 
+            if len(claims) >= 8:
+                break
+
         return claims

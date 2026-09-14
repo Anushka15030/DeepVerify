@@ -10,6 +10,7 @@ from pathlib import Path
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from app.providers.document.base import DocumentRetrievalProvider
+from app.providers.llm.gemini import GeminiLLMProvider
 
 
 
@@ -52,6 +53,8 @@ class Settings(BaseSettings):
         alias="TAVILY_API_KEY",
     )
 
+    gemini_api_key: str = Field(default="", alias="GEMINI_API_KEY")
+
     document_retrieval_provider: str = Field(
         default="mock",
         alias="DOCUMENT_RETRIEVAL_PROVIDER",
@@ -85,29 +88,29 @@ def clear_settings_cache() -> None:
     get_settings.cache_clear()
 
 
-def create_llm_provider(
-    settings: Settings | None = None,
-) -> LLMProvider:
-    """Create an LLM provider based on settings and mock mode."""
-
+def create_llm_provider(settings: Settings | None = None) -> LLMProvider:
+    from app.providers.llm.gemini import GeminiLLMProvider
     from app.providers.llm.kie_astra import KieAstraLLMProvider
     from app.providers.llm.mock import MockLLMProvider
 
     cfg = settings or get_settings()
 
     if cfg.mock_mode:
-        return MockLLMProvider(model=cfg.llm_model)
+        return MockLLMProvider()
 
     provider_name = cfg.llm_provider.lower()
 
     if provider_name == "mock":
-        return MockLLMProvider(model=cfg.llm_model)
+        return MockLLMProvider()
 
     if provider_name == "kie_astra":
-        return KieAstraLLMProvider(settings=cfg)
+        return KieAstraLLMProvider(cfg)
+
+    if provider_name == "gemini":
+        return GeminiLLMProvider(cfg)
 
     raise ValueError(
-        f"Unsupported LLM provider: {cfg.llm_provider}"
+        f"Unsupported LLM_PROVIDER: {cfg.llm_provider}"
     )
 
 
@@ -150,6 +153,7 @@ def create_document_retrieval_provider(
     """Create a document retrieval provider based on settings and mock mode."""
     from app.providers.document.mock import MockDocumentRetrievalProvider
     from app.providers.document.mineru import MinerUDocumentRetrievalProvider
+    from app.providers.document.pymupdf import PyMuPDFDocumentRetrievalProvider
 
     cfg = settings or get_settings()
     provider_name = cfg.document_retrieval_provider.lower()
@@ -163,6 +167,10 @@ def create_document_retrieval_provider(
     if provider_name == "mineru":
         output_dir = Path("../mineru_service/outputs").resolve()
         return MinerUDocumentRetrievalProvider(output_dir)
+
+    if provider_name == "pymupdf":
+        input_dir = Path("../mineru_service/inputs").resolve()
+        return PyMuPDFDocumentRetrievalProvider(input_dir)
 
     raise ValueError(
         f"Unsupported document retrieval provider: "

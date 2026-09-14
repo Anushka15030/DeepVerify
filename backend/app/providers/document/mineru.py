@@ -46,7 +46,7 @@ class MinerUDocumentRetrievalProvider:
 
             score = self._score(result, query_terms)
 
-            if score > 0:
+            if score >= 0.34:
                 scored.append((score, result))
 
         scored.sort(key=lambda item: item[0], reverse=True)
@@ -294,12 +294,54 @@ class MinerUDocumentRetrievalProvider:
         return text.strip()
 
     def _tokenize(self, text: str) -> set[str]:
-        """Create normalized query tokens."""
+        """Create normalized, meaningful query tokens."""
+
+        stop_words = {
+            "the",
+            "and",
+            "for",
+            "with",
+            "from",
+            "that",
+            "this",
+            "are",
+            "what",
+            "how",
+            "why",
+            "can",
+            "does",
+            "into",
+            "about",
+            "their",
+            "there",
+            "these",
+            "those",
+            "major",
+            "systems",
+            "system",
+            "research",
+            "evidence",
+            "data",
+            "study",
+            "studies",
+            "analysis",
+            "information",
+            "challenges",
+            "challenge",
+            "limitations",
+            "limitation",
+            "risks",
+            "risk",
+            "concerns",
+            "concern",
+            "issues",
+            "issue",
+        }
 
         return {
             token
             for token in re.findall(r"[a-zA-Z0-9]+", text.lower())
-            if len(token) > 2
+            if len(token) > 2 and token not in stop_words
         }
 
     def _score(
@@ -307,25 +349,24 @@ class MinerUDocumentRetrievalProvider:
         result: DocumentSearchResult,
         query_terms: set[str],
     ) -> float:
-        """Score evidence based on query-term overlap."""
+        """Score evidence based on meaningful query-term overlap."""
 
         if not query_terms:
             return 0.0
 
         text_terms = set(self._tokenize(result.excerpt))
-
         overlap = query_terms.intersection(text_terms)
 
-        if not overlap:
+        if len(overlap) < 2:
             return 0.0
 
         score = len(overlap) / len(query_terms)
 
-        # Give tables a small boost because they contain structured evidence.
+        # Give structured evidence a small boost.
         if self._is_table(result.excerpt):
-            score += 0.05
+            score += 0.0
 
-        return score
+        return min(score, 1.0)
 
     def _is_table(self, text: str) -> bool:
         """Detect likely table evidence."""

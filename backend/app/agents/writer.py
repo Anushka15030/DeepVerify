@@ -18,11 +18,9 @@ def _compact_evidence(
     claim_checks: list[ClaimCheck],
 ) -> tuple[str, list[dict[str, Any]]]:
     """Build compact evidence context and a citation registry."""
-
     citation_registry: list[dict[str, Any]] = []
+    citation_lookup: dict[tuple[Any, ...], int] = {}
     blocks: list[str] = []
-
-    citation_number = 1
 
     for check in claim_checks[:MAX_CLAIMS]:
         blocks.append(f"CLAIM: {check.claim}")
@@ -36,26 +34,40 @@ def _compact_evidence(
             if source is None:
                 continue
 
-            citation_registry.append(
-                {
-                    "number": citation_number,
-                    "title": source.title,
-                    "url": source.url,
-                    "provider": source.provider,
-                    "document_id": source.document_id,
-                    "page_number": source.page_number,
-                    "bbox": source.bbox,
-                    "image_url": source.image_url,
-                    "snippet": source.snippet[:300],
-                }
+            # Reuse the same citation when identical evidence is
+            # encountered for another claim.
+            citation_key = (
+                source.document_id,
+                source.page_number,
+                tuple(source.bbox) if source.bbox else None,
+                source.url,
             )
+
+            if citation_key not in citation_lookup:
+                citation_number = len(citation_registry) + 1
+
+                citation_lookup[citation_key] = citation_number
+
+                citation_registry.append(
+                    {
+                        "number": citation_number,
+                        "title": source.title,
+                        "url": source.url,
+                        "provider": source.provider,
+                        "document_id": source.document_id,
+                        "page_number": source.page_number,
+                        "bbox": source.bbox,
+                        "image_url": source.image_url,
+                        "snippet": source.snippet[:300],
+                    }
+                )
+            else:
+                citation_number = citation_lookup[citation_key]
 
             blocks.append(
                 f"EVIDENCE [{citation_number}]: "
                 f"{evidence.excerpt[:MAX_EXCERPT_CHARS]}"
             )
-
-            citation_number += 1
 
         blocks.append("")
 
