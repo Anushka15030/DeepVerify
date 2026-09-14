@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import uuid
+from collections.abc import Callable
 from datetime import datetime, timezone
 
 from app.core.config import (
@@ -26,6 +27,7 @@ async def run_research(
     llm: LLMProvider | None = None,
     search: SearchProvider | None = None,
     document_provider: DocumentRetrievalProvider | None = None,
+    event_callback: Callable[[AgentEvent], None] | None = None,
 ) -> DeepVerifyState:
     """Execute the research graph and return the final state."""
 
@@ -51,7 +53,23 @@ async def run_research(
         resolved_run_id,
     )
 
-    final = await graph.ainvoke(initial)
+    final = None
+    sent_event_count = 0
+
+    async for state_update in graph.astream(
+        initial,
+        stream_mode="values",
+    ):
+        final = state_update
+
+        current_events = state_update.get("agent_events", [])
+
+        while sent_event_count < len(current_events):
+            event = current_events[sent_event_count]
+            sent_event_count += 1
+
+            if event_callback is not None:
+                event_callback(event)
 
     state = DeepVerifyState.model_validate(final)
 
@@ -71,5 +89,8 @@ async def run_research(
     )
 
     state.agent_events.append(completion_event)
+
+    if event_callback is not None:
+        event_callback(completion_event)
 
     return state

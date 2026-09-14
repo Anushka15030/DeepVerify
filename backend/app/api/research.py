@@ -40,18 +40,19 @@ async def _run_research_background(
     run_id: str,
     question: str,
 ) -> None:
-    """Run research in the background and store the final result."""
+    """Run research in the background and stream events as they occur."""
+
+    def on_event(event: AgentEvent) -> None:
+        _events[run_id].append(event)
 
     try:
         state = await run_research(
             question,
             run_id=run_id,
+            event_callback=on_event,
         )
 
         _results[run_id] = state
-
-        # run_research already adds run_completed.
-        _events[run_id].extend(state.agent_events)
 
     except Exception as exc:
         _events[run_id].append(
@@ -63,8 +64,6 @@ async def _run_research_background(
                 },
             )
         )
-
-
 @router.post("", response_model=ResearchStartResponse)
 async def start_research(
     request: ResearchRequest,
