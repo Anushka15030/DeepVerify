@@ -29,17 +29,9 @@ from app.providers.search.base import SearchProvider
 
 
 def route_revision(state: DeepVerifyGraphState) -> str:
-    """Route to targeted research or finish the workflow."""
+    """Route based on the revision decision produced by the previous node."""
 
-    settings = get_settings()
-    decider = RevisionDecider(settings)
-
-    should_revise = decider.should_revise(
-        grounding_score=state.grounding_score,
-        revision_count=state.revision_count,
-    )
-
-    return "revise" if should_revise else "finish"
+    return "revise" if state.revision_queries else "finish"
 
 
 def build_research_graph(
