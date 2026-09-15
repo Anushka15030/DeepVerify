@@ -84,3 +84,27 @@ def test_fact_checker_rejects_blank_claim() -> None:
 
     with pytest.raises(ValueError, match="claim must not be blank"):
         checker.check_claim("   ", [])
+
+def test_deterministic_fact_checker_returns_relevant_evidence():
+    checker = FactChecker()
+
+    evidence = [
+        Evidence(
+            excerpt="Python was created by Guido van Rossum.",
+            confidence=0.9,
+        ),
+        Evidence(
+            excerpt="The Eiffel Tower is located in Paris.",
+            confidence=0.8,
+        ),
+    ]
+
+    result = checker.check_claim(
+        "Python was created by Guido van Rossum.",
+        evidence,
+    )
+
+    assert result.verdict == "inconclusive"
+    assert result.verification_method == "deterministic_fallback"
+    assert len(result.evidence) == 1
+    assert "Python" in result.evidence[0].excerpt

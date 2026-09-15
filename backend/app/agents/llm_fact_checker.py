@@ -1,17 +1,18 @@
-"""LLM-powered fact checking for DeepVerify."""
+"""LLM-based fact-checking agent for DeepVerify."""
 
 from __future__ import annotations
 
 import json
+import re
+from typing import Any
 
 from app.core.models import ClaimCheck, Evidence
-from app.providers.llm.base import LLMProvider
 
 
 class LLMFactChecker:
-    """Verify a claim against supplied evidence using an LLM."""
+    """Fact-check claims using an LLM and supplied evidence."""
 
-    def __init__(self, llm: LLMProvider) -> None:
+    def __init__(self, llm: Any) -> None:
         self.llm = llm
 
     async def check_claim(
@@ -19,134 +20,134 @@ class LLMFactChecker:
         claim: str,
         evidence: list[Evidence],
     ) -> ClaimCheck:
-        """Verify one claim using only the supplied evidence."""
+        """Verify a claim against supplied evidence."""
 
         if not claim.strip():
             raise ValueError("claim must not be blank")
 
-        if not evidence:
-            return ClaimCheck(
-                claim=claim,
-                verdict="unverifiable",
-                evidence=[],
-                grounding_score=0.0,
-                explanation="No evidence was available to verify this claim.",
-            )
-
-        evidence_text = "\n".join(
-            f"[{index}] {item.excerpt.strip()}"
-            for index, item in enumerate(evidence)
+        usable_evidence = [
+            item
+            for item in evidence
             if item.excerpt.strip()
-        )
+        ]
 
-        if not evidence_text:
+        if not usable_evidence:
             return ClaimCheck(
                 claim=claim,
                 verdict="unverifiable",
                 evidence=[],
                 grounding_score=0.0,
                 verification_method="llm",
-                explanation="Available evidence contained no usable excerpts.",
+                explanation=(
+                    "No evidence was available to verify this claim."
+                ),
             )
 
-        system = """
-You are a strict fact-checking agent.
+        evidence_text = "\n\n".join(
+            f"[{index}] {item.excerpt.strip()}"
+            for index, item in enumerate(usable_evidence)
+        )
 
-Verify ONE claim using ONLY the supplied evidence.
+        prompt = f"""
+You are a careful fact-checking system.
 
-Verdict must be exactly one of:
-supported, contradicted, unverifiable, inconclusive
+Verify the following claim using ONLY the supplied evidence.
 
-Use:
-- supported = evidence directly supports the claim
-- contradicted = evidence directly conflicts with the claim
-- unverifiable = evidence is insufficient
-- inconclusive = evidence is relevant but ambiguous or conflicting
-
-Return ONLY this JSON object:
-{
-  "verdict": "supported",
-  "grounding_score": 0.0,
-  "explanation": "brief evidence-based explanation",
-  "evidence_indices": [0]
-}
-
-grounding_score must be between 0.0 and 1.0.
-
-evidence_indices must contain only the zero-based evidence indices
-that materially support the verdict.
-
-Do not use outside knowledge.
-Do not invent information.
-Do not include markdown.
-Do not include text outside the JSON object.
-Keep the explanation under 40 words.
-"""
-
-        prompt = f"""Claim:
-{claim.strip()}
+Claim:
+{claim}
 
 Evidence:
 {evidence_text}
-"""
+
+Verdict must be exactly one of:
+supported, refuted, unverifiable, inconclusive
+
+Use:
+- supported = evidence directly supports the claim
+- refuted = evidence directly conflicts with the claim
+- unverifiable = evidence is insufficient to verify the claim
+- inconclusive = evidence is relevant but ambiguous or conflicting
+
+Return ONLY valid JSON in this exact structure:
+
+{{
+  "verdict": "supported",
+  "grounding_score": 0.0,
+  "explanation": "Brief explanation based on the evidence.",
+  "evidence_indices": [0]
+}}
+
+Rules:
+- grounding_score must be between 0.0 and 1.0.
+- evidence_indices must contain only indices from the supplied evidence.
+- Select only evidence that directly supports or contradicts the claim.
+- Do not invent evidence.
+- Do not use information outside the supplied evidence.
+- Keep the explanation concise and evidence-based.
+""".strip()
+
+        system = (
+            "You are a precise fact-checking assistant. "
+            "Return only valid JSON and never invent evidence."
+        )
 
         response = await self.llm.complete(
-            prompt=prompt,
+            prompt,
             system=system,
         )
 
-        try:
-            data = json.loads(response)
-        except json.JSONDecodeError as exc:
-            raise ValueError(
-                "LLM fact checker returned invalid JSON."
-            ) from exc
-
-        if not isinstance(data, dict):
-            raise ValueError(
-                "LLM fact checker must return a JSON object."
-            )
-
-        verdict = data.get("verdict")
-        grounding_score = data.get("grounding_score")
-        explanation = data.get("explanation", "")
-        evidence_indices = data.get("evidence_indices", [])
+        data = self._parse_response(response)
 
         allowed_verdicts = {
             "supported",
-            "contradicted",
+            "refuted",
             "unverifiable",
             "inconclusive",
         }
 
+        verdict = data.get("verdict")
+
         if verdict not in allowed_verdicts:
             raise ValueError(
-                f"Invalid fact-check verdict: {verdict!r}"
+                f"invalid verdict: {verdict}"
             )
+
+        grounding_score = data.get("grounding_score")
 
         if not isinstance(grounding_score, (int, float)):
             raise ValueError(
-                "grounding_score must be numeric."
+                "grounding_score must be a number"
             )
 
-        grounding_score = max(
-            0.0,
-            min(1.0, float(grounding_score)),
-        )
+        grounding_score = float(grounding_score)
+
+        if not 0.0 <= grounding_score <= 1.0:
+            raise ValueError(
+                "grounding_score must be between 0.0 and 1.0"
+            )
+
+        explanation = data.get("explanation", "")
 
         if not isinstance(explanation, str):
             explanation = str(explanation)
 
+        evidence_indices = data.get("evidence_indices", [])
+
         if not isinstance(evidence_indices, list):
             raise ValueError(
-                "evidence_indices must be a JSON array."
+                "evidence_indices must be a list"
             )
 
         selected_evidence: list[Evidence] = []
 
         for index in evidence_indices:
-            if isinstance(index, int) and 0 <= index < len(evidence):
-                selected_evidence.append(evidence[index])
+            if not isinstance(index, int):
+                continue
+
+            if 0 <= index < len(usable_evidence):
+                selected_evidence.append(
+                    usable_evidence[index]
+                )
 
         return ClaimCheck(
             claim=claim,
@@ -156,3 +157,36 @@ Evidence:
             verification_method="llm",
             explanation=explanation,
         )
+
+    @staticmethod
+    def _parse_response(response: str) -> dict[str, Any]:
+        """Parse JSON returned by the LLM."""
+
+        cleaned = response.strip()
+
+        # Remove Markdown code fences if the model returns them.
+        cleaned = re.sub(
+            r"^```(?:json)?\s*",
+            "",
+            cleaned,
+            flags=re.IGNORECASE,
+        )
+        cleaned = re.sub(
+            r"\s*```$",
+            "",
+            cleaned,
+        )
+
+        try:
+            data = json.loads(cleaned)
+        except json.JSONDecodeError as exc:
+            raise ValueError(
+                "invalid JSON returned by LLM"
+            ) from exc
+
+        if not isinstance(data, dict):
+            raise ValueError(
+                "LLM response must be a JSON object"
+            )
+
+        return data

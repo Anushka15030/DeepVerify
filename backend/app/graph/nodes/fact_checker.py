@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from datetime import datetime, timezone
 from typing import Any
 
@@ -18,17 +19,57 @@ MAX_CLAIMS_PER_PASS = 6
 MAX_EVIDENCE_PER_CLAIM = 4
 MAX_EXCERPT_CHARS = 1000
 
+_STOP_WORDS = {
+    "about",
+    "after",
+    "also",
+    "because",
+    "being",
+    "between",
+    "could",
+    "does",
+    "from",
+    "have",
+    "into",
+    "more",
+    "other",
+    "should",
+    "that",
+    "their",
+    "there",
+    "these",
+    "they",
+    "this",
+    "those",
+    "using",
+    "were",
+    "which",
+    "with",
+}
 
-def _select_evidence_for_claim(claim: str, evidence: list) -> list:
-    """Select a small evidence subset that is most relevant to a claim."""
 
-    claim_tokens = {
-        token.lower()
-        for token in claim.split()
-        if len(token) >= 4
+def _tokenize(text: str) -> set[str]:
+    """Normalize text into meaningful comparison tokens."""
+
+    return {
+        token
+        for token in re.findall(r"[a-zA-Z0-9]+", text.lower())
+        if len(token) >= 4 and token not in _STOP_WORDS
     }
 
-    scored: list[tuple[int, Any]] = []
+
+def _select_evidence_for_claim(
+    claim: str,
+    evidence: list,
+) -> list:
+    """Select the strongest evidence matches for a claim."""
+
+    claim_tokens = _tokenize(claim)
+
+    if not claim_tokens:
+        return []
+
+    scored: list[tuple[float, Any]] = []
 
     for item in evidence:
         excerpt = item.excerpt.strip()
@@ -36,24 +77,36 @@ def _select_evidence_for_claim(claim: str, evidence: list) -> list:
         if not excerpt:
             continue
 
-        excerpt_tokens = {
-            token.lower()
-            for token in excerpt.split()
-            if len(token) >= 4
-        }
+        evidence_tokens = _tokenize(excerpt)
 
-        overlap = len(claim_tokens & excerpt_tokens)
+        if not evidence_tokens:
+            continue
 
-        scored.append((overlap, item))
+        overlap = claim_tokens & evidence_tokens
 
-    scored.sort(key=lambda pair: pair[0], reverse=True)
+        if not overlap:
+            continue
 
-    selected = [
+        # Fraction of claim concepts appearing in the evidence.
+        relevance = len(overlap) / len(claim_tokens)
+
+        # Give a small boost to higher-confidence evidence.
+        score = (
+            relevance * 0.7
+            + item.confidence * 0.3
+        )
+
+        scored.append((score, item))
+
+    scored.sort(
+        key=lambda pair: pair[0],
+        reverse=True,
+    )
+
+    return [
         item
-        for _, item in scored[:MAX_EVIDENCE_PER_CLAIM]
-    ]
-
-    return selected
+        for _, item in scored
+    ][:MAX_EVIDENCE_PER_CLAIM]
 
 
 def make_fact_checker_node(llm: LLMProvider):
@@ -84,10 +137,6 @@ def make_fact_checker_node(llm: LLMProvider):
                 "agent_events": [event],
             }
 
-        # ---------------------------------------------------------
-        # Decide which claims need to be checked.
-        # ---------------------------------------------------------
-
         if state.revision_count == 0:
             claims_to_check = state.claims
         else:
@@ -106,13 +155,7 @@ def make_fact_checker_node(llm: LLMProvider):
                 )
             ]
 
-        # Hard limit to prevent unexpectedly expensive LLM runs.
         claims_to_check = claims_to_check[:MAX_CLAIMS_PER_PASS]
-
-        # ---------------------------------------------------------
-        # If there are no weak claims left, keep the existing
-        # grounding score.
-        # ---------------------------------------------------------
 
         if not claims_to_check:
             latest_checks = {
@@ -148,10 +191,6 @@ def make_fact_checker_node(llm: LLMProvider):
                 "agent_events": [event],
             }
 
-        # ---------------------------------------------------------
-        # Fact-check selected claims using only relevant evidence.
-        # ---------------------------------------------------------
-
         mode = "llm"
         claim_checks = []
 
@@ -164,19 +203,16 @@ def make_fact_checker_node(llm: LLMProvider):
                     state.evidence,
                 )
 
-                # Trim excerpts before sending them to the LLM.
-                compact_evidence = []
-
-                for evidence in relevant_evidence:
-                    evidence_copy = evidence.model_copy(
+                compact_evidence = [
+                    evidence.model_copy(
                         update={
                             "excerpt": evidence.excerpt.strip()[
                                 :MAX_EXCERPT_CHARS
                             ]
                         }
                     )
-
-                    compact_evidence.append(evidence_copy)
+                    for evidence in relevant_evidence
+                ]
 
                 result = await checker.check_claim(
                     claim,
@@ -189,7 +225,6 @@ def make_fact_checker_node(llm: LLMProvider):
             mode = "deterministic_fallback"
 
             fallback_checker = FactChecker()
-
             claim_checks = []
 
             for claim in claims_to_check:
@@ -198,16 +233,12 @@ def make_fact_checker_node(llm: LLMProvider):
                     state.evidence,
                 )
 
-                claim_checks.append(
-                    fallback_checker.check_claim(
-                        claim,
-                        relevant_evidence,
-                    )
+                result = fallback_checker.check_claim(
+                    claim,
+                    relevant_evidence,
                 )
 
-        # ---------------------------------------------------------
-        # Merge new checks with previous checks.
-        # ---------------------------------------------------------
+                claim_checks.append(result)
 
         latest_checks = {
             check.claim: check
@@ -216,10 +247,6 @@ def make_fact_checker_node(llm: LLMProvider):
 
         for check in claim_checks:
             latest_checks[check.claim] = check
-
-        # ---------------------------------------------------------
-        # Calculate overall grounding score.
-        # ---------------------------------------------------------
 
         grounding_score = (
             sum(

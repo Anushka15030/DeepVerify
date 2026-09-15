@@ -108,6 +108,10 @@ class ClaimCheck(BaseModel):
     verdict: ClaimVerdict
     evidence: list[Evidence] = Field(default_factory=list)
     grounding_score: float = Field(default=0.0, ge=0.0, le=1.0)
+    verification_method: Literal[
+        "llm",
+        "deterministic_fallback",
+    ] = "deterministic_fallback"
     explanation: str = ""
 
     @field_validator("claim")
