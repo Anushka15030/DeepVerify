@@ -45,6 +45,7 @@ class LLMFactChecker:
                 verdict="unverifiable",
                 evidence=[],
                 grounding_score=0.0,
+                verification_method="llm",
                 explanation="Available evidence contained no usable excerpts.",
             )
 
@@ -152,5 +153,6 @@ Evidence:
             verdict=verdict,
             evidence=selected_evidence,
             grounding_score=grounding_score,
+            verification_method="llm",
             explanation=explanation,
         )
