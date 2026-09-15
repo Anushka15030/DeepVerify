@@ -9,7 +9,7 @@ from typing import Any
 from app.agents.fact_checker import FactChecker
 from app.agents.llm_fact_checker import LLMFactChecker
 from app.core.config import get_settings
-from app.core.models import AgentEvent
+from app.core.models import AgentEvent, ClaimCheck
 from app.graph.state import DeepVerifyGraphState
 from app.providers.llm.base import LLMProvider
 
@@ -84,7 +84,8 @@ def _select_evidence_for_claim(
 
         overlap = claim_tokens & evidence_tokens
 
-        if not overlap:
+        # Ignore evidence with only a single coincidental keyword.
+        if len(overlap) < 2:
             continue
 
         # Fraction of claim concepts appearing in the evidence.
@@ -224,7 +225,6 @@ def make_fact_checker_node(llm: LLMProvider):
         except Exception:
             mode = "deterministic_fallback"
 
-            fallback_checker = FactChecker()
             claim_checks = []
 
             for claim in claims_to_check:
@@ -233,7 +233,7 @@ def make_fact_checker_node(llm: LLMProvider):
                     state.evidence,
                 )
 
-                result = fallback_checker.check_claim(
+                result = _fallback_fact_check(
                     claim,
                     relevant_evidence,
                 )
@@ -278,3 +278,230 @@ def make_fact_checker_node(llm: LLMProvider):
         }
 
     return fact_checker_node
+
+def _fallback_fact_check(
+    claim: str,
+    evidence_items: list,
+) -> ClaimCheck:
+    """Deterministic evidence-aware fallback used when the LLM is unavailable.
+
+    This is deliberately conservative:
+    - strong semantic/lexical overlap can support a claim;
+    - explicit polarity mismatch can refute a claim;
+    - weak or ambiguous overlap remains unverifiable/inconclusive.
+
+    It does not treat a shared keyword as proof.
+    """
+
+    if not claim or not claim.strip():
+        return ClaimCheck(
+            claim=claim,
+            verdict="unverifiable",
+            grounding_score=0.0,
+            explanation="The claim is empty and cannot be verified.",
+            evidence=[],
+            verification_method="deterministic_fallback",
+        )
+
+    if not evidence_items:
+        return ClaimCheck(
+            claim=claim,
+            verdict="unverifiable",
+            grounding_score=0.0,
+            explanation="No relevant evidence was retrieved for this claim.",
+            evidence=[],
+            verification_method="deterministic_fallback",
+        )
+
+    claim_tokens = _tokenize(claim)
+
+    if not claim_tokens:
+        return ClaimCheck(
+            claim=claim,
+            verdict="unverifiable",
+            grounding_score=0.0,
+            explanation=(
+                "The claim does not contain enough meaningful terms "
+                "for deterministic verification."
+            ),
+            evidence=[],
+            verification_method="deterministic_fallback",
+        )
+
+    scored: list[tuple[float, int, Any, set[str]]] = []
+
+    for index, item in enumerate(evidence_items):
+        excerpt = (getattr(item, "excerpt", "") or "").strip()
+
+        if not excerpt:
+            continue
+
+        evidence_tokens = _tokenize(excerpt)
+        overlap = claim_tokens & evidence_tokens
+
+        # Require at least two shared concepts so generic words do not
+        # make unrelated evidence look relevant.
+        if len(overlap) < 2:
+            continue
+
+        relevance = len(overlap) / len(claim_tokens)
+
+        try:
+            confidence = float(getattr(item, "confidence", 0.5))
+        except (TypeError, ValueError):
+            confidence = 0.5
+
+        confidence = max(0.0, min(1.0, confidence))
+
+        score = (relevance * 0.80) + (confidence * 0.20)
+
+        scored.append((score, index, item, overlap))
+
+    if not scored:
+        return ClaimCheck(
+            claim=claim,
+            verdict="unverifiable",
+            grounding_score=0.10,
+            explanation=(
+                "The retrieved evidence does not contain enough overlapping "
+                "information to verify this claim."
+            ),
+            evidence=[],
+            verification_method="deterministic_fallback",
+        )
+
+    scored.sort(key=lambda item: item[0], reverse=True)
+    top = scored[:MAX_EVIDENCE_PER_CLAIM]
+
+    best_score, _, best_item, best_overlap = top[0]
+    selected_evidence = [item for _, _, item, _ in top]
+
+    # Detect explicit polarity mismatch only when the evidence is strongly
+    # related to the claim. This handles cases such as:
+    #
+    # Claim:    "AI is fully capable of detecting new misinformation."
+    # Evidence: "AI is not capable enough of detecting new misinformation."
+    #
+    # while avoiding the mistake of treating every word like "limitation"
+    # as a contradiction.
+    negation_terms = {
+        "not",
+        "never",
+        "cannot",
+        "can't",
+        "unable",
+        "fails",
+        "failed",
+        "lack",
+        "lacks",
+        "insufficient",
+    }
+
+    positive_capability_terms = {
+        "capable",
+        "detect",
+        "detecting",
+        "accurate",
+        "reliable",
+        "effective",
+        "eliminate",
+        "solves",
+        "solved",
+        "prevents",
+        "prevent",
+        "always",
+        "fully",
+        "complete",
+        "complete",
+    }
+
+    claim_lower = claim.lower()
+    claim_has_negation = bool(
+        re.search(
+            r"\b(?:not|never|cannot|can't|unable|lack|lacks|without)\b",
+            claim_lower,
+        )
+    )
+
+    polarity_refuted = False
+
+    for _, _, item, overlap in top:
+        evidence_text = (getattr(item, "excerpt", "") or "").lower()
+
+        evidence_has_negation = bool(
+            re.search(
+                r"\b(?:not|never|cannot|can't|unable|lack|lacks|insufficient)\b",
+                evidence_text,
+            )
+        )
+
+        shared_capability = bool(
+            overlap & positive_capability_terms
+        )
+
+        # A negative evidence statement about the same capability contradicts
+        # a positive claim, and vice versa.
+        if (
+            len(overlap) >= 3
+            and evidence_has_negation
+            and not claim_has_negation
+            and shared_capability
+        ):
+            polarity_refuted = True
+            break
+
+    if polarity_refuted:
+        return ClaimCheck(
+            claim=claim,
+            verdict="refuted",
+            grounding_score=round(min(best_score, 0.35), 2),
+            explanation=(
+                "Strongly related evidence was retrieved, but it explicitly "
+                "states a limitation or inability that conflicts with the "
+                "claim."
+            ),
+            evidence=selected_evidence,
+            verification_method="deterministic_fallback",
+        )
+
+    # Strong direct grounding.
+    if best_score >= 0.65:
+        return ClaimCheck(
+            claim=claim,
+            verdict="supported",
+            grounding_score=round(min(best_score, 0.95), 2),
+            explanation=(
+                "The retrieved evidence contains substantial overlap with "
+                "the claim and directly addresses its subject."
+            ),
+            evidence=selected_evidence,
+            verification_method="deterministic_fallback",
+        )
+
+    # Moderate overlap means the evidence is relevant, but deterministic
+    # lexical matching cannot establish the claim confidently.
+    if best_score >= 0.35:
+        return ClaimCheck(
+            claim=claim,
+            verdict="inconclusive",
+            grounding_score=round(best_score, 2),
+            explanation=(
+                "Relevant evidence was found, but the available text does "
+                "not provide enough direct support for a confident verdict."
+            ),
+            evidence=selected_evidence,
+            verification_method="deterministic_fallback",
+        )
+
+    return ClaimCheck(
+        claim=claim,
+        verdict="unverifiable",
+        grounding_score=round(best_score, 2),
+        explanation=(
+            "The retrieved evidence is too weakly related to establish "
+            "whether the claim is supported or refuted."
+        ),
+        evidence=selected_evidence,
+        verification_method="deterministic_fallback",
+    )
+

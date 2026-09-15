@@ -75,3 +75,45 @@ async def test_llm_claim_extractor_rejects_invalid_json():
 
 def test_fake_llm_matches_provider_protocol():
     assert isinstance(FakeLLM(), LLMProvider)
+
+
+
+class RecordingLLM:
+    """Fake LLM that records the prompt sent by the extractor."""
+
+    def __init__(self) -> None:
+        self.prompt = ""
+        self.system = ""
+
+    async def complete(
+        self,
+        prompt: str,
+        system: str | None = None,
+    ) -> str:
+        self.prompt = prompt
+        self.system = system or ""
+
+        return """
+        [
+            {
+                "claim": "AI fact-checking systems can struggle with sarcasm and satire.",
+                "claim_type": "factual",
+                "importance": "high"
+            }
+        ]
+        """
+
+
+@pytest.mark.asyncio
+async def test_llm_claim_extractor_includes_research_question():
+    llm = RecordingLLM()
+    extractor = LLMClaimExtractor(llm)
+
+    await extractor.extract(
+        "AI systems can struggle with sarcasm and satire.",
+        research_question="What are the major challenges of AI fact-checking systems?",
+    )
+
+    assert "What are the major challenges of AI fact-checking systems?" in llm.prompt
+    assert "directly help answer" in llm.prompt
+    assert "the research question" in llm.prompt

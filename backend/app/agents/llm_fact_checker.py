@@ -79,11 +79,22 @@ Return ONLY valid JSON in this exact structure:
 
 Rules:
 - grounding_score must be between 0.0 and 1.0.
-- evidence_indices must contain only indices from the supplied evidence.
+- grounding_score measures how strongly the supplied evidence supports
+  the exact claim, not how plausible or generally true the claim is.
+- 0.90-1.00 = directly and strongly supported by the supplied evidence.
+- 0.70-0.89 = mostly supported, but some qualification or detail is missing.
+- 0.40-0.69 = partially supported, ambiguous, or only indirectly supported.
+- 0.10-0.39 = very weak support or substantial uncertainty.
+- 0.00-0.09 = contradicted, unsupported, or no meaningful grounding.
+- Never assign a high grounding score merely because the claim and evidence
+  share keywords.
 - Select only evidence that directly supports or contradicts the claim.
+- evidence_indices must contain only indices from the supplied evidence.
 - Do not invent evidence.
 - Do not use information outside the supplied evidence.
-- Keep the explanation concise and evidence-based.
+- If the evidence does not establish the claim, prefer "unverifiable"
+  or "inconclusive" rather than guessing.
+- Keep the explanation concise and explicitly tied to the selected evidence.
 """.strip()
 
         system = (

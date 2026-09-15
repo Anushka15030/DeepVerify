@@ -21,7 +21,22 @@ async def main():
 
     print(f"\nEvidence groups: {len(state.evidence)}")
     print(f"Claims: {len(state.claims)}")
-    print(f"Claim checks: {len(state.claim_checks)}")
+    print("\n--- CLAIMS ---")
+    for i, claim in enumerate(state.claims, 1):
+        print(f"{i}. {claim}")
+
+    print("\n--- CLAIM CHECK SUMMARY ---")
+    for i, check in enumerate(state.claim_checks, 1):
+        if isinstance(check, dict):
+            print(
+                f"{i}. "
+                f"verdict={check.get('verdict')} | "
+                f"grounding={check.get('grounding_score')} | "
+                f"method={check.get('verification_method')} | "
+                f"explanation={str(check.get('explanation', ''))[:180]}"
+            )
+        else:
+            print(f"{i}. {str(check)[:300]}")
 
     print("\n--- EVENTS ---")
     for event in state.agent_events:

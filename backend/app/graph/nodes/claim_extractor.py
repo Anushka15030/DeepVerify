@@ -56,7 +56,8 @@ def make_claim_extractor_node(llm: LLMProvider):
         try:
             llm_extractor = LLMClaimExtractor(llm)
             extracted_claims = await llm_extractor.extract(
-                research_text
+                research_text,
+                research_question=state.original_question,
             )
 
             MAX_CLAIMS = 10

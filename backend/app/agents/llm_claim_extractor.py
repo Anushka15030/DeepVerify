@@ -16,29 +16,70 @@ class LLMClaimExtractor:
     def __init__(self, llm: LLMProvider) -> None:
         self.llm = llm
 
-    async def extract(self, text: str) -> list[ExtractedClaim]:
+    async def extract(
+        self,
+        text: str,
+        research_question: str | None = None,
+    ) -> list[ExtractedClaim]:
+        """Extract atomic, independently verifiable claims."""
+
         if not text.strip():
             return []
 
+        question_context = (
+            research_question.strip()
+            if research_question and research_question.strip()
+            else "No specific research question was provided."
+        )
+
         system = """
-You are a research claim extraction agent.
+You are a research claim extraction agent for an autonomous
+fact-checking system.
 
-Extract only the most important factual claims from the provided research text.
+Your task is to extract the most important factual claims from
+the supplied research evidence that directly answer the research
+question.
 
-Prioritize:
+A VALID CLAIM MUST:
+- be an objective factual assertion about the research topic
+- be independently verifiable using evidence
+- contain one main proposition
+- be directly relevant to the research question
+- be supported by the supplied research text
+- stand on its own without referring to "the paper", "the study",
+  "the authors", "the research", or "the evidence"
+
+Prefer:
 - quantitative or statistical claims
 - concrete factual claims
 - important comparisons
 - supported causal claims
 - important temporal claims
+- specific limitations or findings relevant to the question
 
-Ignore:
-- opinions
-- recommendations
+DO NOT extract:
+- statements about what a paper, study, or author discusses
+- article or paper metadata
+- headings or section descriptions
+- recommendations presented as established facts
+- vague claims such as "AI has many challenges"
+- opinions or speculation
 - questions
-- vague statements
-- repeated claims
 - minor background details
+- duplicate or near-duplicate claims
+- compound claims containing several independently verifiable
+  propositions
+
+If a sentence contains multiple distinct factual propositions,
+split them into separate claims when appropriate.
+
+Prefer a specific, independently verifiable statement such as:
+"AI fact-checking systems can struggle to interpret sarcasm and satire."
+
+Do NOT produce a meta-level statement such as:
+"The research discusses difficulties in interpreting sarcasm and satire."
+
+Extract fewer claims rather than producing low-value claims.
 
 Extract AT MOST 10 claims.
 
@@ -66,13 +107,18 @@ Each item must have exactly:
 
 Do not explain your answer.
 Do not invent information.
-"""
+""".strip()
 
         prompt = f"""
-Extract the important factual claims from this research text:
+Research question:
+{question_context}
 
+Research evidence:
 {text}
-"""
+
+Extract only the high-value factual claims that directly help answer
+the research question.
+""".strip()
 
         response = await self.llm.complete(
             prompt=prompt,
@@ -82,10 +128,14 @@ Extract the important factual claims from this research text:
         try:
             data = json.loads(response)
         except json.JSONDecodeError as exc:
-            raise ValueError("LLM returned invalid JSON for claim extraction.") from exc
+            raise ValueError(
+                "LLM returned invalid JSON for claim extraction."
+            ) from exc
 
         if not isinstance(data, list):
-            raise ValueError("LLM claim extraction response must be a JSON array.")
+            raise ValueError(
+                "LLM claim extraction response must be a JSON array."
+            )
 
         claims: list[ExtractedClaim] = []
 
