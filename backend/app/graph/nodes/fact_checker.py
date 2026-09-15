@@ -464,6 +464,42 @@ def _fallback_fact_check(
             verification_method="deterministic_fallback",
         )
 
+    # Claims containing absolute or predictive language require more than
+    # topical overlap. The evidence must contain corresponding support.
+    absolute_terms = {
+        "completely",
+        "every",
+        "all",
+        "always",
+        "never",
+        "fully",
+        "guarantee",
+        "guarantees",
+        "eliminate",
+        "eliminates",
+        "eliminate",
+        "will",
+    }
+
+    claim_has_absolute_language = bool(
+        set(re.findall(r"\b[a-zA-Z]+\b", claim_lower))
+        & absolute_terms
+    )
+
+    if claim_has_absolute_language and not polarity_refuted:
+        return ClaimCheck(
+            claim=claim,
+            verdict="unverifiable",
+            grounding_score=round(min(best_score, 0.55), 2),
+            explanation=(
+                "The evidence is relevant to the topic, but it does not "
+                "directly establish the claim's absolute or predictive "
+                "assertion."
+            ),
+            evidence=selected_evidence,
+            verification_method="deterministic_fallback",
+        )
+
     # Strong direct grounding.
     if best_score >= 0.65:
         return ClaimCheck(
